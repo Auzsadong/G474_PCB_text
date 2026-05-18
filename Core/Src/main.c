@@ -75,6 +75,12 @@ WaveMode_t dac2_current_mode = WAVE_MODE_SINE; // DAC2 默认为正弦
 
 uint16_t adc_buffer[1000];
 uint16_t adc2_buffer[1000];    // 新增：ADC2 缓存
+// -------- 新增：运行时长统计变量与颜色 --------
+volatile uint16_t run_time_ms = 0;
+uint8_t run_time_s = 0;
+uint8_t run_time_m = 0;
+uint16_t run_time_h = 0;
+#define UI_COLOR_TIME    0xFFE0         // 计时器颜色（黄色）
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -157,6 +163,7 @@ int main(void)
   HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, 1000);
   HAL_ADC_Start_DMA(&hadc2, (uint32_t*)adc2_buffer, 1000); // 新增：启动 ADC2 的 DMA
 
+  HAL_TIM_Base_Start_IT(&htim16); // 启动 TIM16 中断，用于计时器更新
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -221,6 +228,10 @@ int main(void)
       // 动态刷新 ADC2 数据 (占位显示)
       sprintf(lcd_buf, "%.3f V  ", voltage2);
       ST7789_DrawString(80, 95, lcd_buf, UI_COLOR_VAL, UI_COLOR_BG);
+
+      // -------- 新增：动态刷新运行时长 (HH:MM:SS) --------
+      sprintf(lcd_buf, "%02d:%02d:%02d  ", run_time_h, run_time_m, run_time_s);
+      ST7789_DrawString(80, 215, lcd_buf, UI_COLOR_TIME, UI_COLOR_BG);
     }
 
     /* USER CODE END WHILE */
@@ -282,6 +293,31 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
   if (hadc->Instance == ADC1)
   {
       // 保持为空即可
+  }
+}
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  // 判断是 TIM16 触发的 1ms 中断
+  if (htim->Instance == TIM16)
+  {
+    run_time_ms++;
+    if (run_time_ms >= 1000)
+    {
+      run_time_ms = 0;
+      run_time_s++;
+
+      if (run_time_s >= 60)
+      {
+        run_time_s = 0;
+        run_time_m++;
+
+        if (run_time_m >= 60)
+        {
+          run_time_m = 0;
+          run_time_h++; // 小时数无上限累加，适合长测
+        }
+      }
+    }
   }
 }
 /* USER CODE END 4 */
