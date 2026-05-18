@@ -74,6 +74,7 @@ WaveMode_t dac1_current_mode = WAVE_MODE_SINE;
 WaveMode_t dac2_current_mode = WAVE_MODE_SINE; // DAC2 默认为正弦
 
 uint16_t adc_buffer[1000];
+uint16_t adc2_buffer[1000];    // 新增：ADC2 缓存
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -129,6 +130,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_SPI2_Init();
   MX_TIM7_Init();
+  MX_TIM16_Init();
   /* USER CODE BEGIN 2 */
   // ================= 外设启动代码 =================
   ST7789_Init();
@@ -153,7 +155,8 @@ int main(void)
   HAL_DAC_Start_DMA(&hdac2, DAC_CHANNEL_1, (uint32_t*)wave_data_64, 64, DAC_ALIGN_12B_R);
   HAL_TIM_Base_Start(&htim7);
   HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, 1000);
-  
+  HAL_ADC_Start_DMA(&hadc2, (uint32_t*)adc2_buffer, 1000); // 新增：启动 ADC2 的 DMA
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -204,7 +207,7 @@ int main(void)
 
     // ================= 1. 获取最新电压 =================
     voltage1 = (float)adc_buffer[0] * 3.3f / 4095.0f;
-    // voltage2 = ... // 如果配置了 ADC2，在这里更新 voltage2 的值
+    voltage2 = (float)adc2_buffer[0] * 3.3f / 4095.0f; // 新增：计算 ADC2 的电压
 
     // ================= 2. LCD 数值动态刷新 (10Hz 刷新率) =================
     if (HAL_GetTick() - lcd_tick >= 100)
