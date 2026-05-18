@@ -41,7 +41,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-const uint32_t wave_data_64[64] = {
+uint32_t wave_data_64[64] = {
   2048, 2248, 2447, 2642, 2831, 3013, 3185, 3346,
   3495, 3630, 3750, 3853, 3939, 4006, 4056, 4085,
   4095, 4085, 4056, 4006, 3939, 3853, 3750, 3630,
@@ -51,6 +51,28 @@ const uint32_t wave_data_64[64] = {
      0,   10,   39,   89,  156,  242,  345,  465,
    600,  749,  910, 1082, 1264, 1453, 1648, 1847
 };
+// 新增：64点全量程三角波数组（0 ~ 4095）
+ uint32_t wave_data_triangle[64] = {
+  0,  128,  256,  384,  512,  640,  768,  896, 1024, 1152, 1280, 1408, 1536, 1664, 1792, 1920,
+2048, 2176, 2304, 2432, 2560, 2688, 2816, 2944, 3072, 3200, 3328, 3456, 3584, 3712, 3840, 3968,
+4095, 3968, 3840, 3712, 3584, 3456, 3328, 3200, 3072, 2944, 2816, 2688, 2560, 2432, 2304, 2176,
+2048, 1920, 1792, 1664, 1536, 1408, 1280, 1152, 1024,  896,  768,  640,  512,  384,  256,  128
+};
+
+#define UI_COLOR_BG      BLACK          // 屏幕背景
+#define UI_COLOR_TEXT    0xAAAA         // 静态标签颜色（浅灰色）
+#define UI_COLOR_VAL     0x07FF         // ADC数值颜色（亮青色）
+#define UI_COLOR_SINE    GREEN          // 正弦波标签背景（绿色）
+#define UI_COLOR_TRI     0xFDE0         // 三角波标签背景（橙黄色）
+
+typedef enum {
+  WAVE_MODE_SINE = 0,
+  WAVE_MODE_TRIANGLE
+} WaveMode_t;
+
+WaveMode_t dac1_current_mode = WAVE_MODE_SINE;
+WaveMode_t dac2_current_mode = WAVE_MODE_SINE; // DAC2 默认为正弦
+
 uint16_t adc_buffer[1000];
 /* USER CODE END PV */
 
@@ -102,74 +124,101 @@ int main(void)
   MX_DMA_Init();
   MX_DAC1_Init();
   MX_DAC2_Init();
-  MX_TIM6_Init();
   MX_ADC1_Init();
   MX_ADC2_Init();
   MX_USART2_UART_Init();
   MX_SPI2_Init();
+  MX_TIM7_Init();
   /* USER CODE BEGIN 2 */
   // ================= 外设启动代码 =================
-  // 1. 启动 DAC DMA 连续输出波形
+  ST7789_Init();
+  ST7789_Fill(0, 0, ST7789_WIDTH - 1, ST7789_HEIGHT - 1, UI_COLOR_BG); // 刷黑背景
+
+  // 1. 绘制顶部 Header 条
+  ST7789_Fill(0, 0, ST7789_WIDTH - 1, 32, 0x01CF); // 深青色顶栏
+  ST7789_DrawString(12, 8, "STM32G474 DASHBOARD", WHITE, 0x01CF);
+
+  // 2. 绘制静态标签 (整齐对齐)
+  ST7789_DrawString(15, 55,  "ADC1 :", UI_COLOR_TEXT, UI_COLOR_BG);
+  ST7789_DrawString(15, 95,  "ADC2 :", UI_COLOR_TEXT, UI_COLOR_BG);
+  ST7789_DrawString(15, 135, "DAC1 :", UI_COLOR_TEXT, UI_COLOR_BG);
+  ST7789_DrawString(15, 175, "DAC2 :", UI_COLOR_TEXT, UI_COLOR_BG);
+
+  // 3. 绘制 DAC 初始状态 (默认正弦波)
+  ST7789_DrawString(80, 135, "SINE Wave", UI_COLOR_SINE, UI_COLOR_BG);
+  ST7789_DrawString(80, 175, "SINE Wave", UI_COLOR_SINE, UI_COLOR_BG);
+
+  // ================= 外设常规启动 =================
   HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_1, (uint32_t*)wave_data_64, 64, DAC_ALIGN_12B_R);
   HAL_DAC_Start_DMA(&hdac2, DAC_CHANNEL_1, (uint32_t*)wave_data_64, 64, DAC_ALIGN_12B_R);
-
-  // 2. 启动 TIM6 定时器触发 DAC
-  HAL_TIM_Base_Start(&htim6);
-
-  // 3. 启动 ADC1 的 DMA 连续搬运
+  HAL_TIM_Base_Start(&htim7);
   HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, 1000);
-
-  // ================= LCD 屏幕开机测试 =================
-  ST7789_Init(); // 初始化 LCD
-
-  // 刷全屏红色测试 (等待 500ms)
-  ST7789_Fill(0, 0, ST7789_WIDTH - 1, ST7789_HEIGHT - 1, RED);
-  HAL_Delay(500);
-
-  // 刷全屏绿色测试 (等待 500ms)
-  ST7789_Fill(0, 0, ST7789_WIDTH - 1, ST7789_HEIGHT - 1, GREEN);
-  HAL_Delay(500);
-
-  // 刷全屏蓝色测试 (等待 500ms)
-  ST7789_Fill(0, 0, ST7789_WIDTH - 1, ST7789_HEIGHT - 1, BLUE);
-  HAL_Delay(500);
-
-  // 测试完成，清屏为黑色，准备进入主循环
-  ST7789_Fill(0, 0, ST7789_WIDTH - 1, ST7789_HEIGHT - 1, BLACK);
+  
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  char vofa_buf[64];
-  char lcd_buf[32];            // 新增：用于格式化屏幕显示的字符串
+  char lcd_buf[32];
   float voltage1 = 0.0f;
-  uint32_t lcd_tick = 0;       // 新增：用于记录上一次刷屏的时间戳
+  float voltage2 = 0.0f;       // 预留 ADC2 电压变量
 
+  uint32_t lcd_tick = 0;
+  uint32_t btn_tick = 0;       // 用于按键防抖的时间记录
+
+  // 用于边沿检测的静态变量 (假设按键默认高电平，按下为低电平)
+  static GPIO_PinState btn_last = GPIO_PIN_SET;
   while (1)
   {
-      // ================= 1. 获取最新电压 =================
-      // 从 DMA 缓冲区获取最新的 ADC 值并转换为电压
-      voltage1 = (float)adc_buffer[0] * 3.3f / 4095.0f;
+    // ================= 0. 按键状态触发检测与波形切换 =================
+    GPIO_PinState btn_state = HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_6);
 
-      // ================= 2. 串口发给 Vofa+ =================
-      // 防止 DMA 被过快覆盖，判断状态再发
-      if (huart2.gState == HAL_UART_STATE_READY)
+    // 检测下降沿 (当前为低电平，上次为高电平) 并且加入 50ms 软件防抖
+    if (btn_state == GPIO_PIN_RESET && btn_last == GPIO_PIN_SET && (HAL_GetTick() - btn_tick > 50))
+    {
+      btn_tick = HAL_GetTick(); // 更新按键触发时间
+
+      // 切换 DAC1 状态并局部刷新 UI
+      if (dac1_current_mode == WAVE_MODE_SINE)
       {
-          sprintf(vofa_buf, "%.3f\n", voltage1);
-          HAL_UART_Transmit_DMA(&huart2, (uint8_t*)vofa_buf, strlen(vofa_buf));
-      }
+        // 切换为三角波
+        HAL_DAC_Stop_DMA(&hdac1, DAC_CHANNEL_1);
+        HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_1, (uint32_t*)wave_data_triangle, 64, DAC_ALIGN_12B_R);
+        dac1_current_mode = WAVE_MODE_TRIANGLE;
 
-      // ================= 3. LCD 屏幕显示 (10Hz 刷新率) =================
-      if (HAL_GetTick() - lcd_tick >= 100)
+        // 刷新 DAC1 UI 状态 (多加几个空格覆盖之前的旧字符)
+        ST7789_DrawString(80, 135, "TRI  Wave", UI_COLOR_TRI, UI_COLOR_BG);
+      }
+      else
       {
-          lcd_tick = HAL_GetTick(); // 更新时间戳
+        // 切换回正弦波
+        HAL_DAC_Stop_DMA(&hdac1, DAC_CHANNEL_1);
+        HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_1, (uint32_t*)wave_data_64, 64, DAC_ALIGN_12B_R);
+        dac1_current_mode = WAVE_MODE_SINE;
 
-          sprintf(lcd_buf, "ADC: %.3f V", voltage1);
-
-          // 在 (10, 10) 坐标处显示电压，白字黑底
-          ST7789_DrawString(10, 10, lcd_buf, WHITE, BLACK);
-          ST7789_DrawString(10, 40, lcd_buf, WHITE, BLACK);
+        // 刷新 DAC1 UI 状态
+        ST7789_DrawString(80, 135, "SINE Wave", UI_COLOR_SINE, UI_COLOR_BG);
       }
+    }
+    // 记录本次按键状态，用于下一次循环判断边缘
+    btn_last = btn_state;
+
+    // ================= 1. 获取最新电压 =================
+    voltage1 = (float)adc_buffer[0] * 3.3f / 4095.0f;
+    // voltage2 = ... // 如果配置了 ADC2，在这里更新 voltage2 的值
+
+    // ================= 2. LCD 数值动态刷新 (10Hz 刷新率) =================
+    if (HAL_GetTick() - lcd_tick >= 100)
+    {
+      lcd_tick = HAL_GetTick();
+
+      // 动态刷新 ADC1 数据
+      sprintf(lcd_buf, "%.3f V  ", voltage1); // 后面的空格用于清除残留字符
+      ST7789_DrawString(80, 55, lcd_buf, UI_COLOR_VAL, UI_COLOR_BG);
+
+      // 动态刷新 ADC2 数据 (占位显示)
+      sprintf(lcd_buf, "%.3f V  ", voltage2);
+      ST7789_DrawString(80, 95, lcd_buf, UI_COLOR_VAL, UI_COLOR_BG);
+    }
 
     /* USER CODE END WHILE */
 

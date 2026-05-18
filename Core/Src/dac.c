@@ -57,7 +57,7 @@ void MX_DAC1_Init(void)
   sConfig.DAC_DMADoubleDataMode = DISABLE;
   sConfig.DAC_SignedFormat = DISABLE;
   sConfig.DAC_SampleAndHold = DAC_SAMPLEANDHOLD_DISABLE;
-  sConfig.DAC_Trigger = DAC_TRIGGER_T6_TRGO;
+  sConfig.DAC_Trigger = DAC_TRIGGER_T7_TRGO;
   sConfig.DAC_Trigger2 = DAC_TRIGGER_NONE;
   sConfig.DAC_OutputBuffer = DAC_OUTPUTBUFFER_DISABLE;
   sConfig.DAC_ConnectOnChipPeripheral = DAC_CHIPCONNECT_EXTERNAL;
@@ -99,7 +99,7 @@ void MX_DAC2_Init(void)
   sConfig.DAC_DMADoubleDataMode = DISABLE;
   sConfig.DAC_SignedFormat = DISABLE;
   sConfig.DAC_SampleAndHold = DAC_SAMPLEANDHOLD_DISABLE;
-  sConfig.DAC_Trigger = DAC_TRIGGER_T6_TRGO;
+  sConfig.DAC_Trigger = DAC_TRIGGER_T7_TRGO;
   sConfig.DAC_Trigger2 = DAC_TRIGGER_NONE;
   sConfig.DAC_OutputBuffer = DAC_OUTPUTBUFFER_DISABLE;
   sConfig.DAC_ConnectOnChipPeripheral = DAC_CHIPCONNECT_EXTERNAL;
@@ -137,7 +137,7 @@ void HAL_DAC_MspInit(DAC_HandleTypeDef* dacHandle)
 
     /* DAC1 DMA Init */
     /* DAC1_CH1 Init */
-    hdma_dac1_ch1.Instance = DMA1_Channel1;
+    hdma_dac1_ch1.Instance = DMA2_Channel1;
     hdma_dac1_ch1.Init.Request = DMA_REQUEST_DAC1_CHANNEL1;
     hdma_dac1_ch1.Init.Direction = DMA_MEMORY_TO_PERIPH;
     hdma_dac1_ch1.Init.PeriphInc = DMA_PINC_DISABLE;
@@ -179,7 +179,7 @@ void HAL_DAC_MspInit(DAC_HandleTypeDef* dacHandle)
 
     /* DAC2 DMA Init */
     /* DAC2_CH1 Init */
-    hdma_dac2_ch1.Instance = DMA1_Channel2;
+    hdma_dac2_ch1.Instance = DMA2_Channel2;
     hdma_dac2_ch1.Init.Request = DMA_REQUEST_DAC2_CHANNEL1;
     hdma_dac2_ch1.Init.Direction = DMA_MEMORY_TO_PERIPH;
     hdma_dac2_ch1.Init.PeriphInc = DMA_PINC_DISABLE;
@@ -224,14 +224,7 @@ void HAL_DAC_MspDeInit(DAC_HandleTypeDef* dacHandle)
     HAL_DMA_DeInit(dacHandle->DMA_Handle1);
 
     /* DAC1 interrupt Deinit */
-  /* USER CODE BEGIN DAC1:TIM6_DAC_IRQn disable */
-    /**
-    * Uncomment the line below to disable the "TIM6_DAC_IRQn" interrupt
-    * Be aware, disabling shared interrupt may affect other IPs
-    */
-    /* HAL_NVIC_DisableIRQ(TIM6_DAC_IRQn); */
-  /* USER CODE END DAC1:TIM6_DAC_IRQn disable */
-
+    HAL_NVIC_DisableIRQ(TIM6_DAC_IRQn);
   /* USER CODE BEGIN DAC1_MspDeInit 1 */
 
   /* USER CODE END DAC1_MspDeInit 1 */
@@ -253,7 +246,14 @@ void HAL_DAC_MspDeInit(DAC_HandleTypeDef* dacHandle)
     HAL_DMA_DeInit(dacHandle->DMA_Handle1);
 
     /* DAC2 interrupt Deinit */
-    HAL_NVIC_DisableIRQ(TIM7_DAC_IRQn);
+  /* USER CODE BEGIN DAC2:TIM7_DAC_IRQn disable */
+    /**
+    * Uncomment the line below to disable the "TIM7_DAC_IRQn" interrupt
+    * Be aware, disabling shared interrupt may affect other IPs
+    */
+    /* HAL_NVIC_DisableIRQ(TIM7_DAC_IRQn); */
+  /* USER CODE END DAC2:TIM7_DAC_IRQn disable */
+
   /* USER CODE BEGIN DAC2_MspDeInit 1 */
 
   /* USER CODE END DAC2_MspDeInit 1 */

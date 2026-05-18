@@ -64,7 +64,7 @@ extern DAC_HandleTypeDef hdac1;
 extern DAC_HandleTypeDef hdac2;
 extern DMA_HandleTypeDef hdma_spi2_tx;
 extern SPI_HandleTypeDef hspi2;
-extern TIM_HandleTypeDef htim6;
+extern TIM_HandleTypeDef htim7;
 extern DMA_HandleTypeDef hdma_usart2_tx;
 extern UART_HandleTypeDef huart2;
 /* USER CODE BEGIN EV */
@@ -210,34 +210,6 @@ void SysTick_Handler(void)
 /******************************************************************************/
 
 /**
-  * @brief This function handles DMA1 channel1 global interrupt.
-  */
-void DMA1_Channel1_IRQHandler(void)
-{
-  /* USER CODE BEGIN DMA1_Channel1_IRQn 0 */
-
-  /* USER CODE END DMA1_Channel1_IRQn 0 */
-  HAL_DMA_IRQHandler(&hdma_dac1_ch1);
-  /* USER CODE BEGIN DMA1_Channel1_IRQn 1 */
-
-  /* USER CODE END DMA1_Channel1_IRQn 1 */
-}
-
-/**
-  * @brief This function handles DMA1 channel2 global interrupt.
-  */
-void DMA1_Channel2_IRQHandler(void)
-{
-  /* USER CODE BEGIN DMA1_Channel2_IRQn 0 */
-
-  /* USER CODE END DMA1_Channel2_IRQn 0 */
-  HAL_DMA_IRQHandler(&hdma_dac2_ch1);
-  /* USER CODE BEGIN DMA1_Channel2_IRQn 1 */
-
-  /* USER CODE END DMA1_Channel2_IRQn 1 */
-}
-
-/**
   * @brief This function handles DMA1 channel3 global interrupt.
   */
 void DMA1_Channel3_IRQHandler(void)
@@ -330,7 +302,6 @@ void TIM6_DAC_IRQHandler(void)
   /* USER CODE BEGIN TIM6_DAC_IRQn 0 */
 
   /* USER CODE END TIM6_DAC_IRQn 0 */
-  HAL_TIM_IRQHandler(&htim6);
   HAL_DAC_IRQHandler(&hdac1);
   /* USER CODE BEGIN TIM6_DAC_IRQn 1 */
 
@@ -345,10 +316,39 @@ void TIM7_DAC_IRQHandler(void)
   /* USER CODE BEGIN TIM7_DAC_IRQn 0 */
 
   /* USER CODE END TIM7_DAC_IRQn 0 */
+  HAL_TIM_IRQHandler(&htim7);
   HAL_DAC_IRQHandler(&hdac2);
   /* USER CODE BEGIN TIM7_DAC_IRQn 1 */
 
   /* USER CODE END TIM7_DAC_IRQn 1 */
+}
+
+/**
+  * @brief This function handles DMA2 channel1 global interrupt.
+  */
+void DMA2_Channel1_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA2_Channel1_IRQn 0 */
+
+  /* USER CODE END DMA2_Channel1_IRQn 0 */
+  HAL_DMA_IRQHandler(&hdma_dac1_ch1);
+  /* USER CODE BEGIN DMA2_Channel1_IRQn 1 */
+
+  /* USER CODE END DMA2_Channel1_IRQn 1 */
+}
+
+/**
+  * @brief This function handles DMA2 channel2 global interrupt.
+  */
+void DMA2_Channel2_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA2_Channel2_IRQn 0 */
+
+  /* USER CODE END DMA2_Channel2_IRQn 0 */
+  HAL_DMA_IRQHandler(&hdma_dac2_ch1);
+  /* USER CODE BEGIN DMA2_Channel2_IRQn 1 */
+
+  /* USER CODE END DMA2_Channel2_IRQn 1 */
 }
 
 /* USER CODE BEGIN 1 */
