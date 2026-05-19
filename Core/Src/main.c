@@ -137,8 +137,10 @@ int main(void)
   MX_SPI2_Init();
   MX_TIM7_Init();
   MX_TIM16_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
   // ================= 外设启动代码 =================
+  HAL_UART_Transmit(&huart1, (uint8_t*)"UART is ok\r\n", 18, HAL_MAX_DELAY);
   ST7789_Init();
   ST7789_Fill(0, 0, ST7789_WIDTH - 1, ST7789_HEIGHT - 1, UI_COLOR_BG); // 刷黑背景
 
