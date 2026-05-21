@@ -81,6 +81,21 @@ uint8_t run_time_s = 0;
 uint8_t run_time_m = 0;
 uint16_t run_time_h = 0;
 #define UI_COLOR_TIME    0xFFE0         // 计时器颜色（黄色）
+
+
+/* 增加 printf 到 UART1 的重定向支持 */
+#ifdef __GNUC__
+#define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
+#else
+#define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
+#endif
+PUTCHAR_PROTOTYPE
+{
+  /* 将 printf 输出重定向到 USART1 */
+  HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
+  return ch;
+}
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -139,9 +154,24 @@ int main(void)
   MX_TIM16_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
+  // ================= 外设启动与串口状态日志 =================
+  printf("\r\n========================================\r\n");
+  printf("      STM32G474 Dashboard Booting...      \r\n");
+  printf("========================================\r\n");
+
+  // 能运行到这里说明前置的 MX_Init 函数均未触发 Error_Handler
+  printf("[OK] System Clock Configured\r\n");
+  printf("[OK] GPIO & DMA Initialized\r\n");
+  printf("[OK] USART1 & USART2 Ready\r\n");
+  printf("[OK] ADC1 & ADC2 Ready\r\n");
+  printf("[OK] DAC1 & DAC2 Ready\r\n");
+  printf("[OK] TIM7 & TIM16 Ready\r\n");
   // ================= 外设启动代码 =================
   HAL_UART_Transmit(&huart1, (uint8_t*)"UART is ok\r\n", 18, HAL_MAX_DELAY);
   ST7789_Init();
+
+  printf("[OK] ST7789 LCD Driver Started\r\n");
+
   ST7789_Fill(0, 0, ST7789_WIDTH - 1, ST7789_HEIGHT - 1, UI_COLOR_BG); // 刷黑背景
 
   // 1. 绘制顶部 Header 条
@@ -158,6 +188,8 @@ int main(void)
   ST7789_DrawString(80, 135, "SINE Wave", UI_COLOR_SINE, UI_COLOR_BG);
   ST7789_DrawString(80, 175, "SINE Wave", UI_COLOR_SINE, UI_COLOR_BG);
 
+  printf("[INFO] Starting Peripherals & DMA...\r\n");
+
   // ================= 外设常规启动 =================
   HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_1, (uint32_t*)wave_data_64, 64, DAC_ALIGN_12B_R);
   HAL_DAC_Start_DMA(&hdac2, DAC_CHANNEL_1, (uint32_t*)wave_data_64, 64, DAC_ALIGN_12B_R);
@@ -166,6 +198,8 @@ int main(void)
   HAL_ADC_Start_DMA(&hadc2, (uint32_t*)adc2_buffer, 1000); // 新增：启动 ADC2 的 DMA
 
   HAL_TIM_Base_Start_IT(&htim16); // 启动 TIM16 中断，用于计时器更新
+
+  printf("[INFO] System Boot Complete. Entering Main Loop.\r\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -234,6 +268,7 @@ int main(void)
       // -------- 新增：动态刷新运行时长 (HH:MM:SS) --------
       sprintf(lcd_buf, "%02d:%02d:%02d  ", run_time_h, run_time_m, run_time_s);
       ST7789_DrawString(80, 215, lcd_buf, UI_COLOR_TIME, UI_COLOR_BG);
+
     }
 
     /* USER CODE END WHILE */
