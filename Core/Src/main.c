@@ -153,51 +153,57 @@ int main(void)
   MX_TIM7_Init();
   MX_TIM16_Init();
   MX_USART1_UART_Init();
+
   /* USER CODE BEGIN 2 */
-  // ================= 外设启动与串口状态日志 =================
+  // ================= 1. 系统启动与日志 =================
   printf("\r\n========================================\r\n");
   printf("      STM32G474 Dashboard Booting...      \r\n");
   printf("========================================\r\n");
+  printf("[OK] Hardware Peripherals Initialized\r\n");
 
-  // 能运行到这里说明前置的 MX_Init 函数均未触发 Error_Handler
-  printf("[OK] System Clock Configured\r\n");
-  printf("[OK] GPIO & DMA Initialized\r\n");
-  printf("[OK] USART1 & USART2 Ready\r\n");
-  printf("[OK] ADC1 & ADC2 Ready\r\n");
-  printf("[OK] DAC1 & DAC2 Ready\r\n");
-  printf("[OK] TIM7 & TIM16 Ready\r\n");
-  // ================= 外设启动代码 =================
-  HAL_UART_Transmit(&huart1, (uint8_t*)"UART is ok\r\n", 18, HAL_MAX_DELAY);
+  // ================= 2. LCD 初始化与 UI 静态绘制 =================
   ST7789_Init();
-
   printf("[OK] ST7789 LCD Driver Started\r\n");
 
-  ST7789_Fill(0, 0, ST7789_WIDTH - 1, ST7789_HEIGHT - 1, UI_COLOR_BG); // 刷黑背景
+  ST7789_Fill(0, 0, ST7789_WIDTH - 1, ST7789_HEIGHT - 1, UI_COLOR_BG);
 
-  // 1. 绘制顶部 Header 条
-  ST7789_Fill(0, 0, ST7789_WIDTH - 1, 32, 0x01CF); // 深青色顶栏
+  ST7789_Fill(0, 0, ST7789_WIDTH - 1, 32, 0x01CF);
   ST7789_DrawString(12, 8, "STM32G474 DASHBOARD", WHITE, 0x01CF);
 
-  // 2. 绘制静态标签 (整齐对齐)
   ST7789_DrawString(15, 55,  "ADC1 :", UI_COLOR_TEXT, UI_COLOR_BG);
   ST7789_DrawString(15, 95,  "ADC2 :", UI_COLOR_TEXT, UI_COLOR_BG);
   ST7789_DrawString(15, 135, "DAC1 :", UI_COLOR_TEXT, UI_COLOR_BG);
   ST7789_DrawString(15, 175, "DAC2 :", UI_COLOR_TEXT, UI_COLOR_BG);
 
-  // 3. 绘制 DAC 初始状态 (默认正弦波)
   ST7789_DrawString(80, 135, "SINE Wave", UI_COLOR_SINE, UI_COLOR_BG);
   ST7789_DrawString(80, 175, "SINE Wave", UI_COLOR_SINE, UI_COLOR_BG);
 
-  printf("[INFO] Starting Peripherals & DMA...\r\n");
+  // ================= 3. TIM16 配置与 GPIO 相位初始化 =================
+  // 强制接管 TIM16 配置：假设主频 170MHz，设为 500us 中断周期，从而产生 1KHz 方波
+  TIM16->PSC = 170 - 1;       // 预分频器：1MHz 计数频率 (1us步进)
+  TIM16->ARR = 500 - 1;       // 自动重装载：500us
+  TIM16->EGR = TIM_EGR_UG;    // 触发更新事件使配置生效
 
-  // ================= 外设常规启动 =================
+  // 统一利用 BSRR (Bit Set/Reset Register) 高 16 位清零对应引脚
+  // 确保所有用作 1KHz 方波输出的 IO 口起始电平全部一致为低电平
+  GPIOA->BSRR = (uint32_t)0x99A0 << 16;
+  GPIOB->BSRR = (uint32_t)0x0FFF << 16;
+  GPIOC->BSRR = (uint32_t)0x3FFF << 16;
+  GPIOD->BSRR = (uint32_t)0xECFF << 16;
+  GPIOE->BSRR = (uint32_t)0xFFDF << 16;
+  GPIOF->BSRR = (uint32_t)0x0604 << 16;
+  GPIOG->BSRR = (uint32_t)0x0400 << 16;
+
+  // ================= 4. 启动 DMA、转换器与核心定时器 =================
+  printf("[INFO] Starting DMA, ADC, DAC & Timers...\r\n");
+
   HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_1, (uint32_t*)wave_data_64, 64, DAC_ALIGN_12B_R);
   HAL_DAC_Start_DMA(&hdac2, DAC_CHANNEL_1, (uint32_t*)wave_data_64, 64, DAC_ALIGN_12B_R);
   HAL_TIM_Base_Start(&htim7);
   HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, 1000);
-  HAL_ADC_Start_DMA(&hadc2, (uint32_t*)adc2_buffer, 1000); // 新增：启动 ADC2 的 DMA
+  HAL_ADC_Start_DMA(&hadc2, (uint32_t*)adc2_buffer, 1000);
 
-  HAL_TIM_Base_Start_IT(&htim16); // 启动 TIM16 中断，用于计时器更新
+  HAL_TIM_Base_Start_IT(&htim16); // 启动已重写为 500us 的中断节拍
 
   printf("[INFO] System Boot Complete. Entering Main Loop.\r\n");
   /* USER CODE END 2 */
@@ -206,69 +212,55 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   char lcd_buf[32];
   float voltage1 = 0.0f;
-  float voltage2 = 0.0f;       // 预留 ADC2 电压变量
+  float voltage2 = 0.0f;
 
   uint32_t lcd_tick = 0;
-  uint32_t btn_tick = 0;       // 用于按键防抖的时间记录
-
-  // 用于边沿检测的静态变量 (假设按键默认高电平，按下为低电平)
+  uint32_t btn_tick = 0;
   static GPIO_PinState btn_last = GPIO_PIN_SET;
+
   while (1)
   {
-    // ================= 0. 按键状态触发检测与波形切换 =================
+    // ----------------- [1. 异步事件检测 (按键防抖)] -----------------
     GPIO_PinState btn_state = HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_6);
 
-    // 检测下降沿 (当前为低电平，上次为高电平) 并且加入 50ms 软件防抖
     if (btn_state == GPIO_PIN_RESET && btn_last == GPIO_PIN_SET && (HAL_GetTick() - btn_tick > 50))
     {
-      btn_tick = HAL_GetTick(); // 更新按键触发时间
+      btn_tick = HAL_GetTick();
 
-      // 切换 DAC1 状态并局部刷新 UI
       if (dac1_current_mode == WAVE_MODE_SINE)
       {
-        // 切换为三角波
         HAL_DAC_Stop_DMA(&hdac1, DAC_CHANNEL_1);
         HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_1, (uint32_t*)wave_data_triangle, 64, DAC_ALIGN_12B_R);
         dac1_current_mode = WAVE_MODE_TRIANGLE;
-
-        // 刷新 DAC1 UI 状态 (多加几个空格覆盖之前的旧字符)
         ST7789_DrawString(80, 135, "TRI  Wave", UI_COLOR_TRI, UI_COLOR_BG);
       }
       else
       {
-        // 切换回正弦波
         HAL_DAC_Stop_DMA(&hdac1, DAC_CHANNEL_1);
         HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_1, (uint32_t*)wave_data_64, 64, DAC_ALIGN_12B_R);
         dac1_current_mode = WAVE_MODE_SINE;
-
-        // 刷新 DAC1 UI 状态
         ST7789_DrawString(80, 135, "SINE Wave", UI_COLOR_SINE, UI_COLOR_BG);
       }
     }
-    // 记录本次按键状态，用于下一次循环判断边缘
     btn_last = btn_state;
 
-    // ================= 1. 获取最新电压 =================
+    // ----------------- [2. 传感器数据处理] -----------------
     voltage1 = (float)adc_buffer[0] * 3.3f / 4095.0f;
-    voltage2 = (float)adc2_buffer[0] * 3.3f / 4095.0f; // 新增：计算 ADC2 的电压
+    voltage2 = (float)adc2_buffer[0] * 3.3f / 4095.0f;
 
-    // ================= 2. LCD 数值动态刷新 (10Hz 刷新率) =================
+    // ----------------- [3. LCD 界面 10Hz 动态刷新] -----------------
     if (HAL_GetTick() - lcd_tick >= 100)
     {
       lcd_tick = HAL_GetTick();
 
-      // 动态刷新 ADC1 数据
-      sprintf(lcd_buf, "%.3f V  ", voltage1); // 后面的空格用于清除残留字符
+      sprintf(lcd_buf, "%.3f V  ", voltage1);
       ST7789_DrawString(80, 55, lcd_buf, UI_COLOR_VAL, UI_COLOR_BG);
 
-      // 动态刷新 ADC2 数据 (占位显示)
       sprintf(lcd_buf, "%.3f V  ", voltage2);
       ST7789_DrawString(80, 95, lcd_buf, UI_COLOR_VAL, UI_COLOR_BG);
 
-      // -------- 新增：动态刷新运行时长 (HH:MM:SS) --------
       sprintf(lcd_buf, "%02d:%02d:%02d  ", run_time_h, run_time_m, run_time_s);
       ST7789_DrawString(80, 215, lcd_buf, UI_COLOR_TIME, UI_COLOR_BG);
-
     }
 
     /* USER CODE END WHILE */
@@ -334,24 +326,41 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 }
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-  // 判断是 TIM16 触发的 1ms 中断
+  // 判断是 TIM16 触发的 500us 中断
   if (htim->Instance == TIM16)
   {
-    run_time_ms++;
-    if (run_time_ms >= 1000)
+    // 1. 每 500us 翻转一次所有指定的 GPIO_Output 引脚，产生精确的 1KHz 方波
+    GPIOA->ODR ^= 0x99A0;
+    GPIOB->ODR ^= 0x0FFF;
+    GPIOC->ODR ^= 0x3FFF;
+    GPIOD->ODR ^= 0xECFF;
+    GPIOE->ODR ^= 0xFFDF;
+    GPIOF->ODR ^= 0x0604;
+    GPIOG->ODR ^= 0x0400;
+
+    // 2. 软件分频：500us * 2 = 1ms，维持原有的屏幕仪表盘计时器逻辑
+    static uint8_t ms_divider = 0;
+    ms_divider++;
+    if (ms_divider >= 2)
     {
-      run_time_ms = 0;
-      run_time_s++;
+      ms_divider = 0;
+      run_time_ms++;
 
-      if (run_time_s >= 60)
+      if (run_time_ms >= 1000)
       {
-        run_time_s = 0;
-        run_time_m++;
+        run_time_ms = 0;
+        run_time_s++;
 
-        if (run_time_m >= 60)
+        if (run_time_s >= 60)
         {
-          run_time_m = 0;
-          run_time_h++; // 小时数无上限累加，适合长测
+          run_time_s = 0;
+          run_time_m++;
+
+          if (run_time_m >= 60)
+          {
+            run_time_m = 0;
+            run_time_h++; // 小时数无上限累加，适合长测
+          }
         }
       }
     }
