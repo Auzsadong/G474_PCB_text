@@ -11,6 +11,7 @@
 #include "adc.h"
 #include "dac.h"
 #include "dma.h"
+#include "rtc.h"
 #include "spi.h"
 #include "tim.h"
 #include "usart.h"
@@ -30,6 +31,10 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define BUTTON_PORT      GPIOE
+#define BUTTON_PIN       GPIO_PIN_6
+#define BUTTON_DEBOUNCE_MS 50U
+#define BUTTON_LONG_MS   5000U
 
 /* USER CODE END PD */
 
@@ -101,6 +106,10 @@ PUTCHAR_PROTOTYPE
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
+static uint8_t Button_IsPressed(void);
+static void Dashboard_DrawStatic(void);
+static void Dashboard_ToggleDac1Wave(void);
+static void ScreenRefreshTest_Run(void);
 
 /* USER CODE END PFP */
 
@@ -110,6 +119,131 @@ void delay_us(uint32_t us) {
   uint32_t count = us * (170 / 4);
   while(count--) {
     __NOP();
+  }
+}
+
+static uint8_t Button_IsPressed(void)
+{
+  return HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN) == GPIO_PIN_RESET;
+}
+
+static void Dashboard_DrawStatic(void)
+{
+  ST7789_Fill(0, 0, ST7789_WIDTH - 1, ST7789_HEIGHT - 1, UI_COLOR_BG);
+
+  ST7789_Fill(0, 0, ST7789_WIDTH - 1, 32, 0x01CF);
+  ST7789_DrawString(12, 8, "STM32G474 DASHBOARD", WHITE, 0x01CF);
+
+  ST7789_DrawString(15, 55,  "ADC1 :", UI_COLOR_TEXT, UI_COLOR_BG);
+  ST7789_DrawString(15, 95,  "ADC2 :", UI_COLOR_TEXT, UI_COLOR_BG);
+  ST7789_DrawString(15, 135, "DAC1 :", UI_COLOR_TEXT, UI_COLOR_BG);
+  ST7789_DrawString(15, 175, "DAC2 :", UI_COLOR_TEXT, UI_COLOR_BG);
+  ST7789_DrawString(15, 215, "RTC  :", UI_COLOR_TEXT, UI_COLOR_BG);
+
+  ST7789_DrawString(80, 135,
+                    dac1_current_mode == WAVE_MODE_SINE ? "SINE Wave" : "TRI  Wave",
+                    dac1_current_mode == WAVE_MODE_SINE ? UI_COLOR_SINE : UI_COLOR_TRI,
+                    UI_COLOR_BG);
+  ST7789_DrawString(80, 175,
+                    dac2_current_mode == WAVE_MODE_SINE ? "SINE Wave" : "TRI  Wave",
+                    dac2_current_mode == WAVE_MODE_SINE ? UI_COLOR_SINE : UI_COLOR_TRI,
+                    UI_COLOR_BG);
+}
+
+static void Dashboard_ToggleDac1Wave(void)
+{
+  if (dac1_current_mode == WAVE_MODE_SINE)
+  {
+    HAL_DAC_Stop_DMA(&hdac1, DAC_CHANNEL_1);
+    HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_1, (uint32_t*)wave_data_triangle, 64, DAC_ALIGN_12B_R);
+    dac1_current_mode = WAVE_MODE_TRIANGLE;
+    ST7789_DrawString(80, 135, "TRI  Wave", UI_COLOR_TRI, UI_COLOR_BG);
+  }
+  else
+  {
+    HAL_DAC_Stop_DMA(&hdac1, DAC_CHANNEL_1);
+    HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_1, (uint32_t*)wave_data_64, 64, DAC_ALIGN_12B_R);
+    dac1_current_mode = WAVE_MODE_SINE;
+    ST7789_DrawString(80, 135, "SINE Wave", UI_COLOR_SINE, UI_COLOR_BG);
+  }
+}
+
+static void ScreenRefreshTest_Run(void)
+{
+  static const uint16_t colors[] = {
+    BLACK, WHITE, RED, GREEN, BLUE, CYAN, MAGENTA, YELLOW
+  };
+  uint32_t last_step = 0;
+  uint8_t step = 0;
+  uint8_t exit_press_seen = 0;
+
+  printf("[INFO] Enter screen refresh test. Click PE6 to exit.\r\n");
+
+  while (Button_IsPressed())
+  {
+    HAL_Delay(10);
+  }
+
+  ST7789_Fill(0, 0, ST7789_WIDTH - 1, ST7789_HEIGHT - 1, BLACK);
+  ST7789_DrawString(16, 40, "LCD REFRESH TEST", WHITE, BLACK);
+  ST7789_DrawString(16, 80, "CLICK PE6 TO EXIT", YELLOW, BLACK);
+  HAL_Delay(500);
+
+  while (1)
+  {
+    uint32_t now = HAL_GetTick();
+
+    if ((now - last_step) >= 250U)
+    {
+      last_step = now;
+
+      if ((step % 3U) == 0U)
+      {
+        uint16_t color = colors[(step / 3U) % (sizeof(colors) / sizeof(colors[0]))];
+        ST7789_Fill(0, 0, ST7789_WIDTH - 1, ST7789_HEIGHT - 1, color);
+        ST7789_DrawString(16, 16, "FULL FILL", color == BLACK ? WHITE : BLACK, color);
+      }
+      else if ((step % 3U) == 1U)
+      {
+        uint16_t band_w = ST7789_WIDTH / 8U;
+        for (uint8_t i = 0; i < 8U; i++)
+        {
+          uint16_t x0 = i * band_w;
+          uint16_t x1 = (i == 7U) ? (ST7789_WIDTH - 1U) : (x0 + band_w - 1U);
+          ST7789_Fill(x0, 0, x1, ST7789_HEIGHT - 1U, colors[i]);
+        }
+      }
+      else
+      {
+        uint16_t color_a = colors[(step / 3U) % (sizeof(colors) / sizeof(colors[0]))];
+        uint16_t color_b = colors[((step / 3U) + 4U) % (sizeof(colors) / sizeof(colors[0]))];
+        for (uint16_t y = 0; y < ST7789_HEIGHT; y += 24U)
+        {
+          for (uint16_t x = 0; x < ST7789_WIDTH; x += 24U)
+          {
+            uint16_t x1 = (x + 23U >= ST7789_WIDTH) ? (ST7789_WIDTH - 1U) : (x + 23U);
+            uint16_t y1 = (y + 23U >= ST7789_HEIGHT) ? (ST7789_HEIGHT - 1U) : (y + 23U);
+            ST7789_Fill(x, y, x1, y1, (((x + y) / 24U) & 1U) ? color_a : color_b);
+          }
+        }
+      }
+
+      step++;
+    }
+
+    if (Button_IsPressed())
+    {
+      exit_press_seen = 1;
+    }
+    else if (exit_press_seen)
+    {
+      HAL_Delay(BUTTON_DEBOUNCE_MS);
+      if (!Button_IsPressed())
+      {
+        printf("[INFO] Exit screen refresh test.\r\n");
+        return;
+      }
+    }
   }
 }
 /* USER CODE END 0 */
@@ -153,7 +287,7 @@ int main(void)
   MX_TIM7_Init();
   MX_TIM16_Init();
   MX_USART1_UART_Init();
-
+  MX_RTC_Init();
   /* USER CODE BEGIN 2 */
   // ================= 1. 系统启动与日志 =================
   printf("\r\n========================================\r\n");
@@ -165,18 +299,7 @@ int main(void)
   ST7789_Init();
   printf("[OK] ST7789 LCD Driver Started\r\n");
 
-  ST7789_Fill(0, 0, ST7789_WIDTH - 1, ST7789_HEIGHT - 1, UI_COLOR_BG);
-
-  ST7789_Fill(0, 0, ST7789_WIDTH - 1, 32, 0x01CF);
-  ST7789_DrawString(12, 8, "STM32G474 DASHBOARD", WHITE, 0x01CF);
-
-  ST7789_DrawString(15, 55,  "ADC1 :", UI_COLOR_TEXT, UI_COLOR_BG);
-  ST7789_DrawString(15, 95,  "ADC2 :", UI_COLOR_TEXT, UI_COLOR_BG);
-  ST7789_DrawString(15, 135, "DAC1 :", UI_COLOR_TEXT, UI_COLOR_BG);
-  ST7789_DrawString(15, 175, "DAC2 :", UI_COLOR_TEXT, UI_COLOR_BG);
-
-  ST7789_DrawString(80, 135, "SINE Wave", UI_COLOR_SINE, UI_COLOR_BG);
-  ST7789_DrawString(80, 175, "SINE Wave", UI_COLOR_SINE, UI_COLOR_BG);
+  Dashboard_DrawStatic();
 
   // ================= 3. TIM16 配置与 GPIO 相位初始化 =================
   // 强制接管 TIM16 配置：假设主频 170MHz，设为 500us 中断周期，从而产生 1KHz 方波
@@ -215,34 +338,37 @@ int main(void)
   float voltage2 = 0.0f;
 
   uint32_t lcd_tick = 0;
-  uint32_t btn_tick = 0;
-  static GPIO_PinState btn_last = GPIO_PIN_SET;
+  uint32_t button_down_tick = 0;
+  uint8_t button_was_down = 0;
+  uint8_t button_long_handled = 0;
 
   while (1)
   {
     // ----------------- [1. 异步事件检测 (按键防抖)] -----------------
-    GPIO_PinState btn_state = HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_6);
+    uint32_t now = HAL_GetTick();
+    uint8_t button_down = Button_IsPressed();
 
-    if (btn_state == GPIO_PIN_RESET && btn_last == GPIO_PIN_SET && (HAL_GetTick() - btn_tick > 50))
+    if (button_down && !button_was_down)
     {
-      btn_tick = HAL_GetTick();
-
-      if (dac1_current_mode == WAVE_MODE_SINE)
+      button_down_tick = now;
+      button_long_handled = 0;
+    }
+    else if (button_down && !button_long_handled && ((now - button_down_tick) >= BUTTON_LONG_MS))
+    {
+      button_long_handled = 1;
+      ScreenRefreshTest_Run();
+      Dashboard_DrawStatic();
+      lcd_tick = 0;
+    }
+    else if (!button_down && button_was_down)
+    {
+      uint32_t press_time = now - button_down_tick;
+      if (!button_long_handled && press_time >= BUTTON_DEBOUNCE_MS)
       {
-        HAL_DAC_Stop_DMA(&hdac1, DAC_CHANNEL_1);
-        HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_1, (uint32_t*)wave_data_triangle, 64, DAC_ALIGN_12B_R);
-        dac1_current_mode = WAVE_MODE_TRIANGLE;
-        ST7789_DrawString(80, 135, "TRI  Wave", UI_COLOR_TRI, UI_COLOR_BG);
-      }
-      else
-      {
-        HAL_DAC_Stop_DMA(&hdac1, DAC_CHANNEL_1);
-        HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_1, (uint32_t*)wave_data_64, 64, DAC_ALIGN_12B_R);
-        dac1_current_mode = WAVE_MODE_SINE;
-        ST7789_DrawString(80, 135, "SINE Wave", UI_COLOR_SINE, UI_COLOR_BG);
+        Dashboard_ToggleDac1Wave();
       }
     }
-    btn_last = btn_state;
+    button_was_down = button_down;
 
     // ----------------- [2. 传感器数据处理] -----------------
     voltage1 = (float)adc_buffer[0] * 3.3f / 4095.0f;
@@ -259,7 +385,11 @@ int main(void)
       sprintf(lcd_buf, "%.3f V  ", voltage2);
       ST7789_DrawString(80, 95, lcd_buf, UI_COLOR_VAL, UI_COLOR_BG);
 
-      sprintf(lcd_buf, "%02d:%02d:%02d  ", run_time_h, run_time_m, run_time_s);
+      RTC_TimeTypeDef rtc_time = {0};
+      RTC_DateTypeDef rtc_date = {0};
+      HAL_RTC_GetTime(&hrtc, &rtc_time, RTC_FORMAT_BIN);
+      HAL_RTC_GetDate(&hrtc, &rtc_date, RTC_FORMAT_BIN);
+      sprintf(lcd_buf, "%02d:%02d:%02d  ", rtc_time.Hours, rtc_time.Minutes, rtc_time.Seconds);
       ST7789_DrawString(80, 215, lcd_buf, UI_COLOR_TIME, UI_COLOR_BG);
     }
 
@@ -283,10 +413,16 @@ void SystemClock_Config(void)
   */
   HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1_BOOST);
 
+  /** Configure LSE Drive Capability
+  */
+  HAL_PWR_EnableBkUpAccess();
+  __HAL_RCC_LSEDRIVE_CONFIG(RCC_LSEDRIVE_LOW);
+
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSE;
+  RCC_OscInitStruct.LSEState = RCC_LSE_ON;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
